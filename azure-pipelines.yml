@@ -1,0 +1,122 @@
+variables:
+  system.debug: true
+
+trigger:
+  batch: true
+  branches:
+    include:
+      - master
+    exclude:
+      - feature/*
+
+pool:
+  vmImage: "ubuntu-latest"
+
+schedules:
+  - cron: "0 8/5 * * *"
+    branches:
+      include:
+        - master
+    always: true
+    displayName: DailyCron
+
+stages:
+  - stage: BuildTFCode
+    displayName: BuildTFCode
+    jobs:
+      - job: Build
+        displayName: BuildTFCode
+        steps:
+          - checkout: self
+            persistCredentials: true
+            clean: true
+          - task: PublishPipelineArtifact@1
+            displayName: "Publish Terraform Code"
+            inputs:
+              path: $(system.DefaultWorkingDirectory)
+              artifact: TerraformBuildArtif
+  - stage: DownloadArtifact
+    displayName: "Download Terraform Artif"
+    jobs:
+      - job: Build
+        displayName: DownloadCode
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: TerraformBuildArtif
+              buildVersionToDownload: latest
+              downloadPath: $(system.DefaultWorkingDirectory)            
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV1@0
+            displayName: 'Terraform : AzureRM INIT'
+            inputs:
+              backendServiceArm: $(azuredub)
+              backendAzureRmResourceGroupName: AzureDevOps
+              backendAzureRmStorageAccountName: azdostorageac
+              backendAzureRmContainerName: blob
+              backendAzureRmKey: $(storagekey)   
+          #- task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV1@0
+          #  displayName: 'Terraform : Plan'
+          #  inputs:
+          #    command: plandrandom
+          #    environmentServiceNameAzureRM: $(azuredub)
+          - task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV1@0
+            displayName: 'Terraform : Plan'
+            inputs:
+              command: plan
+              environmentServiceNameAzureRM: $(azuredub) 
+            condition: succeededOrFailed()     
+
+  - stage: Apply
+    displayName: 'ApplyTFCode' 
+    jobs:
+      - deployment: Apply
+        displayName: 'Dev'
+        environment: 'dev'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: DownloadPipelineArtifact@2
+                  displayName: 'Download TF Code'
+                  inputs:
+                    artifactName: TerraformBuildArtif
+                    buildVersionToDownload: latest
+                    downloadPath: $(system.DefaultWorkingDirectory)
+                - bash: 'ls -al'
+                  displayName: List Files
+                - bash: 'chmod +x tf.sh'
+                  workingDirectory: script
+                  displayName: Permission
+                - bash: "./tf.sh"
+                  workingDirectory: script  
+                  displayName: 'RunTF'     
+                - task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV1@0
+                  displayName: 'Terraform : AzureRM INIT'
+                  inputs:
+                    backendServiceArm: 'Azure subscription 1 (0f226a42-f3e0-400f-9f99-d528a836b101)'
+                    backendAzureRmResourceGroupName: AzureDevOps
+                    backendAzureRmStorageAccountName: azdostorageac
+                    backendAzureRmContainerName: blob
+                    backendAzureRmKey: '6/Vj5S5e9LDn4LDAlyyq8Tbqp8HTjIekdz0pUQ2vgO3vaWJiStqpuiDeq23390pRRmh2xlJLmK8TtB8zJEde1A=='   
+                - task: ms-devlabs.custom-terraform-tasks.custom-terraform-release-task.TerraformTaskV1@0
+                  displayName: 'Terraform : Plan'
+                  inputs:
+                    command: apply
+                    environmentServiceNameAzureRM: 'Azure subscription 1 (0f226a42-f3e0-400f-9f99-d528a836b101)'   
+    
+
+
+
+
+
+                    
+                   
+
+
+ 
+
+
+
+
+
+
